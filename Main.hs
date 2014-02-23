@@ -7,6 +7,8 @@ import Data.Time (UTCTime, getCurrentTime)
 import Data.Time.Format(parseTime, formatTime)
 import System.Locale(defaultTimeLocale)
 import Data.Maybe(fromMaybe)
+import System.Environment (getArgs)
+import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), ArgDescr(NoArg,ReqArg))
 
 {-
  - eBird record format, CSV:
@@ -29,11 +31,35 @@ parseRow defaultTime (_:_:name:_:location:rawDate:comments:lat:long:[]) = [fromS
     where date = fixDate defaultTime $ fromSql rawDate
 parseRow _ _ = [""]
 
+data Options = Options {
+        defaultDate :: IO UTCTime
+    }
+
+defaultOptions :: Options
+defaultOptions = Options {
+        defaultDate = getToday
+    }
+
+getToday :: IO UTCTime
+getToday = getCurrentTime
+
+options :: [OptDescr (Options -> IO Options)]
+options = [
+        Option ['D'] ["default-date"] (ReqArg parseDefaultDate "Date") "default date to use YYYY-MM-DD"
+    ]
+
+parseDefaultDate :: String -> Options -> IO Options
+parseDefaultDate suppliedDate opts = do
+    today <- defaultDate opts
+    return $ fixDate today suppliedDate
+
 main = do
-    today <- getCurrentTime
+    args <- getArgs
+    let (optActions, optNonOpts, optMsgs) = getOpt RequireOrder options args
+    opts <- foldl (>>=) (return defaultOptions) optActions
     conn <- connectSqlite3 "AUSBDBList.sql"
     rows <- quickQuery' conn "SELECT * FROM tblListBirds" []
-    writeFile "eBird.csv" $ printCSV $ map (parseRow today) rows
+    writeFile "eBird.csv" $ printCSV $ map (parseRow (defaultDate opts)) rows
     disconnect conn
 
 
