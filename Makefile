@@ -20,6 +20,9 @@ install:
 clean:
 	rm -rf dist
 
+run:
+	cabal run
+
 test: build
 	cabal test
 

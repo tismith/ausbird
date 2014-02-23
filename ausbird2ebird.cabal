@@ -18,7 +18,7 @@ cabal-version:       >=1.10
 
 executable ausbird2ebird
   main-is:           Main.hs
-  build-depends:     base, HDBC, HDBC-sqlite3
+  build-depends:     base, HDBC, HDBC-sqlite3, csv, time, old-locale
   -- hs-source-dirs:      
   default-language:  Haskell2010
 
