@@ -23,7 +23,10 @@ import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), 
 
 fixDate :: UTCTime -> String -> String
 fixDate defaultTime rawDate = formatTime defaultTimeLocale "%-m/%-d/%Y" rawTime
-    where rawTime = fromMaybe defaultTime $ parseTime defaultTimeLocale "%Y-%m-%d" rawDate
+    where rawTime = stringToTime defaultTime rawDate
+
+stringToTime :: UTCTime -> String -> UTCTime
+stringToTime defaultTime rawDate = fromMaybe defaultTime $ parseTime defaultTimeLocale "%Y-%m-%d" rawDate
 
 -- FIXME use safeFromSql to catch parse errors
 parseRow:: UTCTime -> [SqlValue] -> Record
@@ -51,15 +54,16 @@ options = [
 parseDefaultDate :: String -> Options -> IO Options
 parseDefaultDate suppliedDate opts = do
     today <- defaultDate opts
-    return $ fixDate today suppliedDate
+    return $ opts { defaultDate = return $ stringToTime today suppliedDate }
 
 main = do
     args <- getArgs
     let (optActions, optNonOpts, optMsgs) = getOpt RequireOrder options args
     opts <- foldl (>>=) (return defaultOptions) optActions
+    date <- defaultDate opts
     conn <- connectSqlite3 "AUSBDBList.sql"
     rows <- quickQuery' conn "SELECT * FROM tblListBirds" []
-    writeFile "eBird.csv" $ printCSV $ map (parseRow (defaultDate opts)) rows
+    writeFile "eBird.csv" $ printCSV $ map (parseRow date) rows
     disconnect conn
 
 
