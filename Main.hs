@@ -5,6 +5,7 @@ import Database.HDBC.Sqlite3 (connectSqlite3)
 import Text.CSV (Record, printCSV)
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Time.Format(parseTime, formatTime)
+import System.Exit (exitWith, ExitCode(ExitSuccess))
 import System.Locale(defaultTimeLocale)
 import Data.Maybe(fromMaybe)
 import System.Environment (getArgs)
@@ -21,8 +22,8 @@ import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), 
  - CREATE TABLE tblListBirds (id INTEGER PRIMARY KEY, birdID INTEGER, birdComName VARCHAR(35), birdTaxNum INTEGER, birdLocation VARCHAR(100), dateOfSighting VARCHAR(20), birdComments VARCHAR(450), gpsLat REAL, gpsLong REAL);
 -}
 
-fixDate :: UTCTime -> String -> String
-fixDate defaultTime rawDate = formatTime defaultTimeLocale "%-m/%-d/%Y" rawTime
+convertToUSDate :: UTCTime -> String -> String
+convertToUSDate defaultTime rawDate = formatTime defaultTimeLocale "%-m/%-d/%Y" rawTime
     where rawTime = stringToTime defaultTime rawDate
 
 stringToTime :: UTCTime -> String -> UTCTime
@@ -31,16 +32,20 @@ stringToTime defaultTime rawDate = fromMaybe defaultTime $ parseTime defaultTime
 -- FIXME use safeFromSql to catch parse errors
 parseRow:: UTCTime -> [SqlValue] -> Record
 parseRow defaultTime (_:_:name:_:location:rawDate:comments:lat:long:[]) = [fromSql name,"","","x", fromSql comments, fromSql location, fromSql lat, fromSql long, date,"","","","casual","1","","N","","",""]
-    where date = fixDate defaultTime $ fromSql rawDate
+    where date = convertToUSDate defaultTime $ fromSql rawDate
 parseRow _ _ = [""]
 
 data Options = Options {
-        defaultDate :: IO UTCTime
+        defaultDate :: IO UTCTime,
+        inputFileName :: String,
+        outputFileName :: String
     }
 
 defaultOptions :: Options
 defaultOptions = Options {
-        defaultDate = getToday
+        defaultDate = getToday,
+        inputFileName = "AUSDBBList.sql",
+        outputFileName = "ebird.csv"
     }
 
 getToday :: IO UTCTime
@@ -48,22 +53,30 @@ getToday = getCurrentTime
 
 options :: [OptDescr (Options -> IO Options)]
 options = [
-        Option ['D'] ["default-date"] (ReqArg parseDefaultDate "Date") "default date to use YYYY-MM-DD"
+        Option ['D'] ["default-date"] (ReqArg parseDefaultDate "Date") "default date to use YYYY-MM-DD",
+        Option ['v'] ["version"] (NoArg showVersion) "show version number"
     ]
 
 parseDefaultDate :: String -> Options -> IO Options
 parseDefaultDate suppliedDate opts = do
-    today <- defaultDate opts
-    return $ opts { defaultDate = return $ stringToTime today suppliedDate }
+    date <- defaultDate opts
+    return $ opts { defaultDate = return $ stringToTime date suppliedDate }
+
+showVersion :: Options -> IO Options
+showVersion _ = do
+    putStrLn "ausbird2ebird v0.0.1"
+    exitWith ExitSuccess
 
 main = do
     args <- getArgs
     let (optActions, optNonOpts, optMsgs) = getOpt RequireOrder options args
     opts <- foldl (>>=) (return defaultOptions) optActions
     date <- defaultDate opts
-    conn <- connectSqlite3 "AUSBDBList.sql"
+    let inFileName = inputFileName opts
+    let outFileName = outputFileName opts
+    conn <- connectSqlite3 inFileName
     rows <- quickQuery' conn "SELECT * FROM tblListBirds" []
-    writeFile "eBird.csv" $ printCSV $ map (parseRow date) rows
+    writeFile outFileName $ printCSV $ map (parseRow date) rows
     disconnect conn
 
 
