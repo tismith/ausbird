@@ -5,9 +5,10 @@ import Database.HDBC.Sqlite3 (connectSqlite3)
 import Text.CSV (Record, printCSV)
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Time.Format(parseTime, formatTime)
-import System.Exit (exitWith, ExitCode(ExitSuccess))
+import System.Exit (exitSuccess, exitFailure)
 import System.Locale(defaultTimeLocale)
 import Data.Maybe(fromMaybe)
+import System.FilePath (FilePath, isValid)
 import System.Environment (getArgs, getProgName)
 import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), ArgDescr(NoArg,ReqArg), usageInfo)
 
@@ -37,15 +38,15 @@ parseRow _ _ = [""]
 
 data Options = Options {
         defaultDate :: IO UTCTime,
-        inputFileName :: String,
-        outputFileName :: String
+        inputFileName :: IO FilePath,
+        outputFileName :: IO FilePath
     }
 
 defaultOptions :: Options
 defaultOptions = Options {
         defaultDate = getToday,
-        inputFileName = "AUSDBBList.sql",
-        outputFileName = "ebird.csv"
+        inputFileName = return "AUSDBBList.sql",
+        outputFileName = return "ebird.csv"
     }
 
 getToday :: IO UTCTime
@@ -68,34 +69,38 @@ parseDefaultDate suppliedDate opts = do
 showVersion :: Options -> IO Options
 showVersion _ = do
     putStrLn "ausbird2ebird v0.0.1"
-    exitWith ExitSuccess
+    exitSuccess
 
 showHelp :: Options -> IO Options
 showHelp _ = do
     programName <- getProgName
     let header = programName ++ " - Convert iOS Aus. Birds backup SQL to eBird.org submission CSV"
     putStrLn $ usageInfo header options
-    exitWith ExitSuccess
+    exitSuccess
 
-parseInputFileName :: String -> Options -> IO Options
-parseInputFileName suppliedFileName opts = do
-    return $ opts { inputFileName = suppliedFileName }
+parseInputFileName :: FilePath -> Options -> IO Options
+parseInputFileName suppliedFileName opts =
+    if isValid suppliedFileName then do
+        putStrLn $ "Input filename \"" ++ suppliedFileName ++ "\" is invalid"
+        exitFailure
+    else 
+        return $ opts { inputFileName = return suppliedFileName }
 
-parseOutputFileName :: String -> Options -> IO Options
-parseOutputFileName suppliedFileName opts = do
-    return $ opts { outputFileName = suppliedFileName }
+parseOutputFileName :: FilePath -> Options -> IO Options
+parseOutputFileName suppliedFileName opts = 
+    return $ opts { outputFileName = return suppliedFileName }
 
 main = do
     args <- getArgs
     let (optActions, optNonOpts, optMsgs) = getOpt RequireOrder options args
     opts <- foldl (>>=) (return defaultOptions) optActions
     date <- defaultDate opts
-    let inFileName = inputFileName opts
-    let outFileName = outputFileName opts
+    inFileName <- inputFileName opts
+    outFileName <- outputFileName opts
     conn <- connectSqlite3 inFileName
     rows <- quickQuery' conn "SELECT * FROM tblListBirds" []
     writeFile outFileName $ printCSV $ map (parseRow date) rows
     disconnect conn
-    exitWith ExitSuccess
+    exitSuccess
 
 
