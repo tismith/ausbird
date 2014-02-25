@@ -8,8 +8,8 @@ import Data.Time.Format(parseTime, formatTime)
 import System.Exit (exitWith, ExitCode(ExitSuccess))
 import System.Locale(defaultTimeLocale)
 import Data.Maybe(fromMaybe)
-import System.Environment (getArgs)
-import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), ArgDescr(NoArg,ReqArg))
+import System.Environment (getArgs, getProgName)
+import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), ArgDescr(NoArg,ReqArg), usageInfo)
 
 {-
  - eBird record format, CSV:
@@ -53,8 +53,9 @@ getToday = getCurrentTime
 
 options :: [OptDescr (Options -> IO Options)]
 options = [
-        Option ['D'] ["default-date"] (ReqArg parseDefaultDate "Date") "default date to use YYYY-MM-DD",
+        Option ['D'] ["default-date"] (ReqArg parseDefaultDate "DATE") "default date to use YYYY-MM-DD",
         Option ['v'] ["version"] (NoArg showVersion) "show version number",
+        Option ['h','?'] ["help"] (NoArg showHelp) "show version number",
         Option ['i'] ["input"] (ReqArg parseInputFileName "FILE") "Path to input SQL backup from iOS Australian Birds",
         Option ['o'] ["output"] (ReqArg parseOutputFileName "FILE") "Path to export CSV file for submission to eBirds.org"
     ]
@@ -64,6 +65,18 @@ parseDefaultDate suppliedDate opts = do
     date <- defaultDate opts
     return $ opts { defaultDate = return $ stringToTime date suppliedDate }
 
+showVersion :: Options -> IO Options
+showVersion _ = do
+    putStrLn "ausbird2ebird v0.0.1"
+    exitWith ExitSuccess
+
+showHelp :: Options -> IO Options
+showHelp _ = do
+    programName <- getProgName
+    let header = programName ++ " - Convert iOS Aus. Birds backup SQL to eBird.org submission CSV"
+    putStrLn $ usageInfo header options
+    exitWith ExitSuccess
+
 parseInputFileName :: String -> Options -> IO Options
 parseInputFileName suppliedFileName opts = do
     return $ opts { inputFileName = suppliedFileName }
@@ -71,11 +84,6 @@ parseInputFileName suppliedFileName opts = do
 parseOutputFileName :: String -> Options -> IO Options
 parseOutputFileName suppliedFileName opts = do
     return $ opts { outputFileName = suppliedFileName }
-
-showVersion :: Options -> IO Options
-showVersion _ = do
-    putStrLn "ausbird2ebird v0.0.1"
-    exitWith ExitSuccess
 
 main = do
     args <- getArgs
@@ -88,5 +96,6 @@ main = do
     rows <- quickQuery' conn "SELECT * FROM tblListBirds" []
     writeFile outFileName $ printCSV $ map (parseRow date) rows
     disconnect conn
+    exitWith ExitSuccess
 
 
