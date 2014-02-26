@@ -30,16 +30,12 @@ newtype YYMMDDDate = YYMMDDDate { fromYYMMDDDate:: String }
 class ConvertableDate a b where
     convertDate :: UTCTime -> a -> b
 instance ConvertableDate YYMMDDDate MMDDYYDate where
-    convertDate = convertYYMMDDToMMDDYY
+    convertDate defaultTime rawDate = 
+        MMDDYYDate $ formatTime defaultTimeLocale "%-m/%-d/%Y" rawTime
+            where rawTime = (convertDate defaultTime rawDate) :: UTCTime
 instance ConvertableDate YYMMDDDate UTCTime where
-    convertDate = convertYYMMDDToUTCTime
-
-convertYYMMDDToMMDDYY :: UTCTime -> YYMMDDDate -> MMDDYYDate
-convertYYMMDDToMMDDYY defaultTime rawDate = MMDDYYDate $ formatTime defaultTimeLocale "%-m/%-d/%Y" rawTime
-    where rawTime = convertYYMMDDToUTCTime defaultTime rawDate
-
-convertYYMMDDToUTCTime :: UTCTime -> YYMMDDDate -> UTCTime
-convertYYMMDDToUTCTime defaultTime rawDate = fromMaybe defaultTime $ parseTime defaultTimeLocale "%Y-%m-%d" (fromYYMMDDDate rawDate)
+    convertDate defaultTime rawDate = 
+        fromMaybe defaultTime $ parseTime defaultTimeLocale "%Y-%m-%d" (fromYYMMDDDate rawDate)
 
 -- FIXME use safeFromSql to catch parse errors
 parseRow:: UTCTime -> [SqlValue] -> Record
