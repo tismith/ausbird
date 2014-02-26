@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Main (main) where 
 
 import Database.HDBC (SqlValue, quickQuery', fromSql, disconnect)
@@ -26,17 +27,24 @@ import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), 
 newtype MMDDYYDate = MMDDYYDate { fromMMDDYYDate:: String }
 newtype YYMMDDDate = YYMMDDDate { fromYYMMDDDate:: String }
 
-convertToMMDDYYDate :: UTCTime -> YYMMDDDate -> MMDDYYDate
-convertToMMDDYYDate defaultTime rawDate = MMDDYYDate $ formatTime defaultTimeLocale "%-m/%-d/%Y" rawTime
-    where rawTime = stringToTime defaultTime rawDate
+class ConvertableDate a b where
+    convertDate :: UTCTime -> a -> b
+instance ConvertableDate YYMMDDDate MMDDYYDate where
+    convertDate = convertYYMMDDToMMDDYY
+instance ConvertableDate YYMMDDDate UTCTime where
+    convertDate = convertYYMMDDToUTCTime
 
-stringToTime :: UTCTime -> YYMMDDDate -> UTCTime
-stringToTime defaultTime rawDate = fromMaybe defaultTime $ parseTime defaultTimeLocale "%Y-%m-%d" (fromYYMMDDDate rawDate)
+convertYYMMDDToMMDDYY :: UTCTime -> YYMMDDDate -> MMDDYYDate
+convertYYMMDDToMMDDYY defaultTime rawDate = MMDDYYDate $ formatTime defaultTimeLocale "%-m/%-d/%Y" rawTime
+    where rawTime = convertYYMMDDToUTCTime defaultTime rawDate
+
+convertYYMMDDToUTCTime :: UTCTime -> YYMMDDDate -> UTCTime
+convertYYMMDDToUTCTime defaultTime rawDate = fromMaybe defaultTime $ parseTime defaultTimeLocale "%Y-%m-%d" (fromYYMMDDDate rawDate)
 
 -- FIXME use safeFromSql to catch parse errors
 parseRow:: UTCTime -> [SqlValue] -> Record
 parseRow defaultTime (_:_:name:_:location:rawDate:comments:lat:long:[]) = [fromSql name,"","","x", fromSql comments, fromSql location, fromSql lat, fromSql long, date,"","","","casual","1","","N","","",""]
-    where date = fromMMDDYYDate $ convertToMMDDYYDate defaultTime $ YYMMDDDate $ fromSql rawDate
+    where date = fromMMDDYYDate $ convertDate defaultTime $ YYMMDDDate $ fromSql rawDate
 parseRow _ _ = [""]
 
 data Options = Options {
@@ -67,7 +75,7 @@ options = [
 parseDefaultDate :: String -> Options -> IO Options
 parseDefaultDate suppliedDate opts = do
     date <- defaultDate opts
-    return $ opts { defaultDate = return $ stringToTime date (YYMMDDDate suppliedDate) }
+    return $ opts { defaultDate = return $ convertDate date $ YYMMDDDate suppliedDate }
 
 showVersion :: Options -> IO Options
 showVersion _ = do
