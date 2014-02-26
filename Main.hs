@@ -1,6 +1,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Main (main) where 
 
+import Control.Exception(try, SomeException)
+import Control.Applicative ((<|>))
 import Database.HDBC (SqlValue, quickQuery', fromSql, disconnect)
 import Database.HDBC.Sqlite3 (connectSqlite3)
 import Text.CSV (Record, printCSV)
@@ -10,6 +12,7 @@ import System.Exit (exitSuccess, exitFailure)
 import System.Locale(defaultTimeLocale)
 import Data.Maybe(fromMaybe)
 import System.FilePath (FilePath, isValid)
+import System.Directory (getPermissions, Permissions(readable), doesFileExist)
 import System.Environment (getArgs, getProgName)
 import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), ArgDescr(NoArg,ReqArg), usageInfo)
 
@@ -85,13 +88,33 @@ showHelp _ = do
     putStrLn $ usageInfo header options
     exitSuccess
 
+-- FIXME - getPermissions can throw errors
+findFilePathProblem :: FilePath -> IO (Maybe String)
+findFilePathProblem suppliedFileName = do
+    let fileNameValid = if isValid suppliedFileName then 
+                            Nothing else 
+                            Just $ "Input filename \"" ++ suppliedFileName ++ "\" is invalid"
+    exists <- doesFileExist suppliedFileName 
+    let fileExists = if exists then 
+                        Nothing else
+                        Just $ "Input filename \"" ++ suppliedFileName ++ "\" doesn't exist"
+    permE <- (try $ getPermissions suppliedFileName) :: IO (Either SomeException Permissions)
+    let fileReadable = case permE of 
+            Left _ -> Just $ "Input filename \"" ++ suppliedFileName ++ "\" cannot have it's permissions read"
+            Right permissions -> 
+                if readable permissions then 
+                    Nothing else
+                    Just $ "Input filename \"" ++ suppliedFileName ++ "\" is not readable"
+    return $ fileNameValid <|> fileExists <|> fileReadable 
+
 parseInputFileName :: FilePath -> Options -> IO Options
-parseInputFileName suppliedFileName opts =
-    if isValid suppliedFileName then do
-        putStrLn $ "Input filename \"" ++ suppliedFileName ++ "\" is invalid"
-        exitFailure
-    else 
-        return $ opts { inputFileName = return suppliedFileName }
+parseInputFileName suppliedFileName opts = do
+    filePathError <- findFilePathProblem suppliedFileName
+    case filePathError of
+        Just errorString -> do
+            putStrLn errorString
+            exitFailure
+        Nothing -> return $ opts { inputFileName = return suppliedFileName }
 
 parseOutputFileName :: FilePath -> Options -> IO Options
 parseOutputFileName suppliedFileName opts = 
