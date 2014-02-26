@@ -52,7 +52,7 @@ data Options = Options {
 defaultOptions :: Options
 defaultOptions = Options {
         defaultDate = getToday,
-        inputFileName = return "AUSDBBList.sql",
+        inputFileName = return "AUSBDBList.sql",
         outputFileName = return "ebird.csv"
     }
 
