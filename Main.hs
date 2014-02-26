@@ -23,17 +23,20 @@ import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), 
  - CREATE TABLE tblListBirds (id INTEGER PRIMARY KEY, birdID INTEGER, birdComName VARCHAR(35), birdTaxNum INTEGER, birdLocation VARCHAR(100), dateOfSighting VARCHAR(20), birdComments VARCHAR(450), gpsLat REAL, gpsLong REAL);
 -}
 
-convertToUSDate :: UTCTime -> String -> String
-convertToUSDate defaultTime rawDate = formatTime defaultTimeLocale "%-m/%-d/%Y" rawTime
+newtype MMDDYYDate = MMDDYYDate { fromMMDDYYDate:: String }
+newtype YYMMDDDate = YYMMDDDate { fromYYMMDDDate:: String }
+
+convertToMMDDYYDate :: UTCTime -> YYMMDDDate -> MMDDYYDate
+convertToMMDDYYDate defaultTime rawDate = MMDDYYDate $ formatTime defaultTimeLocale "%-m/%-d/%Y" rawTime
     where rawTime = stringToTime defaultTime rawDate
 
-stringToTime :: UTCTime -> String -> UTCTime
-stringToTime defaultTime rawDate = fromMaybe defaultTime $ parseTime defaultTimeLocale "%Y-%m-%d" rawDate
+stringToTime :: UTCTime -> YYMMDDDate -> UTCTime
+stringToTime defaultTime rawDate = fromMaybe defaultTime $ parseTime defaultTimeLocale "%Y-%m-%d" (fromYYMMDDDate rawDate)
 
 -- FIXME use safeFromSql to catch parse errors
 parseRow:: UTCTime -> [SqlValue] -> Record
 parseRow defaultTime (_:_:name:_:location:rawDate:comments:lat:long:[]) = [fromSql name,"","","x", fromSql comments, fromSql location, fromSql lat, fromSql long, date,"","","","casual","1","","N","","",""]
-    where date = convertToUSDate defaultTime $ fromSql rawDate
+    where date = fromMMDDYYDate $ convertToMMDDYYDate defaultTime $ YYMMDDDate $ fromSql rawDate
 parseRow _ _ = [""]
 
 data Options = Options {
@@ -64,7 +67,7 @@ options = [
 parseDefaultDate :: String -> Options -> IO Options
 parseDefaultDate suppliedDate opts = do
     date <- defaultDate opts
-    return $ opts { defaultDate = return $ stringToTime date suppliedDate }
+    return $ opts { defaultDate = return $ stringToTime date (YYMMDDDate suppliedDate) }
 
 showVersion :: Options -> IO Options
 showVersion _ = do
