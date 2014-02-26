@@ -30,13 +30,13 @@ import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), 
 newtype MMDDYYDate = MMDDYYDate { fromMMDDYYDate:: String }
 newtype YYMMDDDate = YYMMDDDate { fromYYMMDDDate:: String }
 
-class ConvertableDate a b where
+class ConvertibleDate a b where
     convertDate :: UTCTime -> a -> b
-instance ConvertableDate YYMMDDDate MMDDYYDate where
+instance ConvertibleDate YYMMDDDate MMDDYYDate where
     convertDate defaultTime rawDate = 
         MMDDYYDate $ formatTime defaultTimeLocale "%-m/%-d/%Y" rawTime
             where rawTime = convertDate defaultTime rawDate :: UTCTime
-instance ConvertableDate YYMMDDDate UTCTime where
+instance ConvertibleDate YYMMDDDate UTCTime where
     convertDate defaultTime rawDate = 
         fromMaybe defaultTime $ parseTime defaultTimeLocale "%Y-%m-%d" (fromYYMMDDDate rawDate)
 
@@ -49,14 +49,16 @@ parseRow _ _ = [""]
 data Options = Options {
         defaultDate :: IO UTCTime,
         inputFileName :: IO FilePath,
-        outputFileName :: IO FilePath
+        outputFileName :: IO FilePath,
+        cutOffDate :: Maybe UTCTime
     }
 
 defaultOptions :: Options
 defaultOptions = Options {
         defaultDate = getToday,
         inputFileName = return "AUSBDBList.sql",
-        outputFileName = return "ebird.csv"
+        outputFileName = return "ebird.csv",
+        cutOffDate = Nothing
     }
 
 getToday :: IO UTCTime
@@ -65,6 +67,7 @@ getToday = getCurrentTime
 options :: [OptDescr (Options -> IO Options)]
 options = [
         Option ['D'] ["default-date"] (ReqArg parseDefaultDate "DATE") "default date to use YYYY-MM-DD",
+        Option ['d'] ["cutoff-date"] (ReqArg parseCutOffDate "DATE") "only export events after this date YYYY-MM-DD",
         Option ['v'] ["version"] (NoArg showVersion) "show version number",
         Option ['h','?'] ["help"] (NoArg showHelp) "show version number",
         Option ['i'] ["input"] (ReqArg parseInputFileName "FILE") "Path to input SQL backup from iOS Australian Birds",
@@ -75,6 +78,10 @@ parseDefaultDate :: String -> Options -> IO Options
 parseDefaultDate suppliedDate opts = do
     date <- defaultDate opts
     return $ opts { defaultDate = return $ convertDate date $ YYMMDDDate suppliedDate }
+
+parseCutOffDate :: String -> Options -> IO Options
+parseCutOffDate suppliedDate opts = do
+    return $ opts { cutOffDate = parseTime defaultTimeLocale "%Y-%m-%d" suppliedDate }
 
 showVersion :: Options -> IO Options
 showVersion _ = do
