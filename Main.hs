@@ -1,9 +1,9 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Main (main) where 
 
-import Control.Exception(try, SomeException)
+import Control.Exception(try, SomeException, handle)
 import Control.Applicative ((<|>))
-import Database.HDBC (SqlValue, quickQuery', fromSql, disconnect)
+import Database.HDBC (SqlValue, quickQuery', fromSql, disconnect, handleSql, SqlError)
 import Database.HDBC.Sqlite3 (connectSqlite3)
 import Text.CSV (Record, printCSV)
 import Data.Time (UTCTime, getCurrentTime)
@@ -35,7 +35,7 @@ class ConvertableDate a b where
 instance ConvertableDate YYMMDDDate MMDDYYDate where
     convertDate defaultTime rawDate = 
         MMDDYYDate $ formatTime defaultTimeLocale "%-m/%-d/%Y" rawTime
-            where rawTime = (convertDate defaultTime rawDate) :: UTCTime
+            where rawTime = convertDate defaultTime rawDate :: UTCTime
 instance ConvertableDate YYMMDDDate UTCTime where
     convertDate defaultTime rawDate = 
         fromMaybe defaultTime $ parseTime defaultTimeLocale "%Y-%m-%d" (fromYYMMDDDate rawDate)
@@ -88,7 +88,8 @@ showHelp _ = do
     putStrLn $ usageInfo header options
     exitSuccess
 
--- FIXME - getPermissions can throw errors
+-- FIXME This actually runs all checks, so e.g. if the file doesn't exist, we still try
+-- and check permissions on it...
 findFilePathProblem :: FilePath -> IO (Maybe String)
 findFilePathProblem suppliedFileName = do
     let fileNameValid = if isValid suppliedFileName then 
@@ -127,8 +128,12 @@ main = do
     date <- defaultDate opts
     inFileName <- inputFileName opts
     outFileName <- outputFileName opts
-    conn <- connectSqlite3 inFileName
-    rows <- quickQuery' conn "SELECT * FROM tblListBirds" []
+    conn <- handle ((\_ -> do 
+        putStrLn $ "Failed opening database in \"" ++ inFileName ++ "\""
+        exitFailure):: SomeException -> IO a) $ connectSqlite3 inFileName
+    rows <- handleSql (\_ -> do
+        putStrLn "Failed to query table \"tblListBirds\""
+        exitFailure) $ quickQuery' conn "SELECT * FROM tblListBirds" []
     writeFile outFileName $ printCSV $ map (parseRow date) rows
     disconnect conn
     exitSuccess
