@@ -143,6 +143,7 @@ main = do
         exitFailure) $ quickQuery' conn "SELECT * FROM tblListBirds" []
     writeFile outFileName $ printCSV $ map (parseRow date) rows
     disconnect conn
+    putStrLn $ "\"" ++ inFileName ++ "\" converted to \"" ++ outFileName ++ "\" successfully"
     exitSuccess
 
 
