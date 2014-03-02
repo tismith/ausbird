@@ -122,14 +122,15 @@ main = do
     inFileName <- inputFileName opts
     outFileName <- outputFileName opts
     let cutOff = cutOffDate opts
-    conn <- handle ((\a -> do 
-        putStrLn $ show a
+    conn <- handle ((\_ -> do 
         putStrLn $ "Failed opening database in \"" ++ inFileName ++ "\""
-        exitFailure):: SomeException -> IO a) $ connectSqlite3 inFileName
+        exitFailure) :: SomeException -> IO a) $ connectSqlite3 inFileName
     rows <- handleSql (\_ -> do
         putStrLn "Failed to query table \"tblListBirds\""
         exitFailure) $ quickQuery' conn "SELECT * FROM tblListBirds" []
-    writeFile outFileName $ printCSV $ catMaybes $ map (parseRow date cutOff) rows
+    handle ((\_ -> do 
+        putStrLn $ "Failed to write to file \"" ++ outFileName ++ "\""
+        exitFailure) :: SomeException -> IO a) $ writeFile outFileName $ printCSV $ catMaybes $ map (parseRow date cutOff) rows
     disconnect conn
     exitSuccess
 
