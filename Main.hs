@@ -2,7 +2,6 @@
 module Main (main) where 
 
 import Control.Exception(try, SomeException, handle)
-import Control.Applicative ((<|>))
 import Database.HDBC (SqlValue, quickQuery', fromSql, disconnect, handleSql, SqlError)
 import Database.HDBC.Sqlite3 (connectSqlite3)
 import Text.CSV (Record, printCSV)
@@ -10,9 +9,8 @@ import Data.Time (UTCTime, getCurrentTime)
 import Data.Time.Format(parseTime, formatTime)
 import System.Exit (exitSuccess, exitFailure)
 import System.Locale(defaultTimeLocale)
-import Data.Maybe(fromMaybe)
-import System.FilePath (FilePath, isValid)
-import System.Directory (getPermissions, Permissions(readable), doesFileExist)
+import Data.Maybe(fromMaybe, catMaybes)
+import System.FilePath (FilePath)
 import System.Environment (getArgs, getProgName)
 import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), ArgDescr(NoArg,ReqArg), usageInfo)
 
@@ -39,12 +37,25 @@ instance ConvertibleDate YYMMDDDate MMDDYYDate where
 instance ConvertibleDate YYMMDDDate UTCTime where
     convertDate defaultTime rawDate = 
         fromMaybe defaultTime $ parseTime defaultTimeLocale "%Y-%m-%d" (fromYYMMDDDate rawDate)
+instance ConvertibleDate MMDDYYDate UTCTime where
+    convertDate defaultTime rawDate = 
+        fromMaybe defaultTime $ parseTime defaultTimeLocale "%-m/%-d/%Y" (fromMMDDYYDate rawDate)
+
+isRowOk :: UTCTime -> Maybe UTCTime -> Record -> Bool
+isRowOk _ (Nothing) _ = True
+isRowOk defaultDate (Just cutOffDate) (_:_:_:_:_:_:_:_:mmddyyDate:_) = (convertDate defaultDate $ MMDDYYDate mmddyyDate) > cutOffDate
+isRowOk _ _ _ = False
 
 -- FIXME use safeFromSql to catch parse errors
-parseRow:: UTCTime -> [SqlValue] -> Record
-parseRow defaultTime (_:_:name:_:location:rawDate:comments:lat:long:[]) = [fromSql name,"","","x", fromSql comments, fromSql location, fromSql lat, fromSql long, date,"","","","casual","1","","N","","",""]
-    where date = fromMMDDYYDate $ convertDate defaultTime $ YYMMDDDate $ fromSql rawDate
-parseRow _ _ = [""]
+parseRow:: UTCTime -> Maybe UTCTime -> [SqlValue] -> Maybe Record
+parseRow defaultTime cutOffDate (_:_:name:_:location:rawDate:comments:lat:long:[]) = 
+    let potentialRow = [fromSql name,"","","x", 
+                        fromSql comments, fromSql location, 
+                        fromSql lat, fromSql long, date,
+                        "","","","casual","1","","N","","",""] in 
+    if isRowOk defaultTime cutOffDate potentialRow then Just potentialRow else Nothing
+        where date = fromMMDDYYDate $ convertDate defaultTime $ YYMMDDDate $ fromSql rawDate
+parseRow _ _ _ = Nothing
 
 data Options = Options {
         defaultDate :: IO UTCTime,
@@ -95,34 +106,9 @@ showHelp _ = do
     putStrLn $ usageInfo header options
     exitSuccess
 
--- FIXME This actually runs all checks, so e.g. if the file doesn't exist, we still try
--- and check permissions on it...
-findFilePathProblem :: FilePath -> IO (Maybe String)
-findFilePathProblem suppliedFileName = do
-    let fileNameValid = if isValid suppliedFileName then 
-                            Nothing else 
-                            Just $ "Input filename \"" ++ suppliedFileName ++ "\" is invalid"
-    exists <- doesFileExist suppliedFileName 
-    let fileExists = if exists then 
-                        Nothing else
-                        Just $ "Input filename \"" ++ suppliedFileName ++ "\" doesn't exist"
-    permE <- (try $ getPermissions suppliedFileName) :: IO (Either SomeException Permissions)
-    let fileReadable = case permE of 
-            Left _ -> Just $ "Input filename \"" ++ suppliedFileName ++ "\" cannot have it's permissions read"
-            Right permissions -> 
-                if readable permissions then 
-                    Nothing else
-                    Just $ "Input filename \"" ++ suppliedFileName ++ "\" is not readable"
-    return $ fileNameValid <|> fileExists <|> fileReadable 
-
 parseInputFileName :: FilePath -> Options -> IO Options
 parseInputFileName suppliedFileName opts = do
-    filePathError <- findFilePathProblem suppliedFileName
-    case filePathError of
-        Just errorString -> do
-            putStrLn errorString
-            exitFailure
-        Nothing -> return $ opts { inputFileName = return suppliedFileName }
+    return $ opts { inputFileName = return suppliedFileName }
 
 parseOutputFileName :: FilePath -> Options -> IO Options
 parseOutputFileName suppliedFileName opts = 
@@ -135,13 +121,15 @@ main = do
     date <- defaultDate opts
     inFileName <- inputFileName opts
     outFileName <- outputFileName opts
-    conn <- handle ((\_ -> do 
+    let cutOff = cutOffDate opts
+    conn <- handle ((\a -> do 
+        putStrLn $ show a
         putStrLn $ "Failed opening database in \"" ++ inFileName ++ "\""
         exitFailure):: SomeException -> IO a) $ connectSqlite3 inFileName
     rows <- handleSql (\_ -> do
         putStrLn "Failed to query table \"tblListBirds\""
         exitFailure) $ quickQuery' conn "SELECT * FROM tblListBirds" []
-    writeFile outFileName $ printCSV $ map (parseRow date) rows
+    writeFile outFileName $ printCSV $ catMaybes $ map (parseRow date cutOff) rows
     disconnect conn
     exitSuccess
 
