@@ -10,3 +10,9 @@ Common Name, Genus, Species, Species Count, Species Comments, Location Name, Lat
 AUSBDBList.sql schema:
 CREATE TABLE tblListBirds (id INTEGER PRIMARY KEY, birdID INTEGER, birdComName VARCHAR(35), birdTaxNum INTEGER, birdLocation VARCHAR(100), dateOfSighting VARCHAR(20), birdComments VARCHAR(450), gpsLat REAL, gpsLong REAL);
 
+
+
+To do:
+*: Add aus. birds to ebird translation for correcting species names (e.g. Fairy-wren -> Fairywren)
+*: Add optional gps point averaging for locations that don't have gps coords
+*: Add KML exporting - c.f. Data.GPS.KML from the gps package
