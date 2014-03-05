@@ -11,6 +11,7 @@ import System.Exit (exitSuccess, exitFailure)
 import System.Locale(defaultTimeLocale)
 import Data.Maybe(fromMaybe, catMaybes)
 import System.FilePath (FilePath)
+import System.Directory (doesFileExist)
 import System.Environment (getArgs, getProgName)
 import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), ArgDescr(NoArg,ReqArg), usageInfo)
 
@@ -96,7 +97,8 @@ parseCutOffDate suppliedDate opts = do
 
 showVersion :: Options -> IO Options
 showVersion _ = do
-    putStrLn "ausbird2ebird v0.0.1"
+    programName <- getProgName
+    putStrLn $ programName ++ " - v0.0.2"
     exitSuccess
 
 showHelp :: Options -> IO Options
@@ -108,7 +110,13 @@ showHelp _ = do
 
 parseInputFileName :: FilePath -> Options -> IO Options
 parseInputFileName suppliedFileName opts = do
-    return $ opts { inputFileName = return suppliedFileName }
+    fileOk <- doesFileExist suppliedFileName
+    if fileOk
+        then 
+            return $ opts { inputFileName = return suppliedFileName }
+        else do
+            putStrLn $ "Input filename \"" ++ suppliedFileName ++ "\" doesn't exist"
+            exitFailure
 
 parseOutputFileName :: FilePath -> Options -> IO Options
 parseOutputFileName suppliedFileName opts = 

@@ -1,6 +1,6 @@
 all: build
 
-.PHONY: init unsafe_init build doc test clean install
+.PHONY: init unsafe_init build doc test clean install run
 
 init:
 	cabal sandbox init
