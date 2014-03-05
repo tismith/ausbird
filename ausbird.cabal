@@ -3,7 +3,7 @@
 
 name:                ausbird
 version:             0.1.0.0
-synopsis:            Convert bird lists from iOS's Australian Birds to ebird CSV format
+synopsis:            Convert bird lists from iOS's Australian Birds to various other formats
 -- description:         
 homepage:            https://github.com/tismith/ausbird2ebird
 license:             MIT
@@ -18,7 +18,7 @@ cabal-version:       >=1.10
 
 executable ausbird
   main-is:           Main.hs
-  build-depends:     base, HDBC, HDBC-sqlite3, csv, time, old-locale, filepath, directory
+  build-depends:     base, HDBC, HDBC-sqlite3, csv, time, old-locale, filepath, directory, gps
   -- hs-source-dirs:      
   default-language:  Haskell2010
 

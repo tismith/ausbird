@@ -1,6 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Main (main) where 
 
+import Geo.Computations (Point, pt)
 import Control.Exception(try, SomeException, handle)
 import Database.HDBC (SqlValue, quickQuery', fromSql, disconnect, handleSql, SqlError)
 import Database.HDBC.Sqlite3 (connectSqlite3)
@@ -46,6 +47,12 @@ isRowOk :: UTCTime -> Maybe UTCTime -> Record -> Bool
 isRowOk _ (Nothing) _ = True
 isRowOk defaultDate (Just cutOffDate) (_:_:_:_:_:_:_:_:mmddyyDate:_) = (convertDate defaultDate $ MMDDYYDate mmddyyDate) > cutOffDate
 isRowOk _ _ _ = False
+
+data Sighting = Sighting { getName :: String, 
+    getLocation :: String, 
+    getComments :: String, 
+    getPoint :: Point 
+}
 
 -- FIXME use safeFromSql to catch parse errors
 parseRow:: UTCTime -> Maybe UTCTime -> [SqlValue] -> Maybe Record
@@ -104,7 +111,7 @@ showVersion _ = do
 showHelp :: Options -> IO Options
 showHelp _ = do
     programName <- getProgName
-    let header = programName ++ " - Convert iOS Aus. Birds backup SQL to eBird.org submission CSV"
+    let header = programName ++ " - Convert iOS Aus. Birds backup SQL various other formats"
     putStrLn $ usageInfo header options
     exitSuccess
 
