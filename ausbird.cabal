@@ -20,5 +20,6 @@ executable ausbird
   main-is:           Main.hs
   build-depends:     base, HDBC, HDBC-sqlite3, csv, time, old-locale, filepath, directory
   -- hs-source-dirs:      
+  ghc-options:	     -Wall -Werror
   default-language:  Haskell2010
 

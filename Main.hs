@@ -1,16 +1,15 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Main (main) where 
 
-import Control.Exception(try, SomeException, handle)
-import Database.HDBC (SqlValue, quickQuery', fromSql, disconnect, handleSql, SqlError)
+import Control.Exception(SomeException, handle)
+import Database.HDBC (SqlValue, quickQuery', fromSql, disconnect, handleSql)
 import Database.HDBC.Sqlite3 (connectSqlite3)
 import Text.CSV (Record, printCSV)
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Time.Format(parseTime, formatTime)
 import System.Exit (exitSuccess, exitFailure)
 import System.Locale(defaultTimeLocale)
-import Data.Maybe(fromMaybe, catMaybes)
-import System.FilePath (FilePath)
+import Data.Maybe(fromMaybe, mapMaybe)
 import System.Directory (doesFileExist)
 import System.Environment (getArgs, getProgName)
 import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), ArgDescr(NoArg,ReqArg), usageInfo)
@@ -44,17 +43,17 @@ instance ConvertibleDate MMDDYYDate UTCTime where
 
 isRowOk :: UTCTime -> Maybe UTCTime -> Record -> Bool
 isRowOk _ (Nothing) _ = True
-isRowOk defaultDate (Just cutOffDate) (_:_:_:_:_:_:_:_:mmddyyDate:_) = (convertDate defaultDate $ MMDDYYDate mmddyyDate) > cutOffDate
+isRowOk defDate (Just cutOff) (_:_:_:_:_:_:_:_:mmddyyDate:_) = convertDate defDate (MMDDYYDate mmddyyDate) > cutOff
 isRowOk _ _ _ = False
 
 -- FIXME use safeFromSql to catch parse errors
 parseRow:: UTCTime -> Maybe UTCTime -> [SqlValue] -> Maybe Record
-parseRow defaultTime cutOffDate (_:_:name:_:location:rawDate:comments:lat:long:[]) = 
+parseRow defaultTime cutOff (_:_:name:_:location:rawDate:comments:lat:long:[]) = 
     let potentialRow = [fromSql name,"","","x", 
                         fromSql comments, fromSql location, 
                         fromSql lat, fromSql long, date,
                         "","","","casual","1","","N","","",""] in 
-    if isRowOk defaultTime cutOffDate potentialRow then Just potentialRow else Nothing
+    if isRowOk defaultTime cutOff potentialRow then Just potentialRow else Nothing
         where date = fromMMDDYYDate $ convertDate defaultTime $ YYMMDDDate $ fromSql rawDate
 parseRow _ _ _ = Nothing
 
@@ -76,6 +75,7 @@ defaultOptions = Options {
 getToday :: IO UTCTime
 getToday = getCurrentTime
 
+{-# ANN options "HLint: ignore Use string literal" #-}
 options :: [OptDescr (Options -> IO Options)]
 options = [
         Option ['D'] ["default-date"] (ReqArg parseDefaultDate "DATE") "default date to use YYYY-MM-DD",
@@ -92,7 +92,7 @@ parseDefaultDate suppliedDate opts = do
     return $ opts { defaultDate = return $ convertDate date $ YYMMDDDate suppliedDate }
 
 parseCutOffDate :: String -> Options -> IO Options
-parseCutOffDate suppliedDate opts = do
+parseCutOffDate suppliedDate opts = 
     return $ opts { cutOffDate = parseTime defaultTimeLocale "%Y-%m-%d" suppliedDate }
 
 showVersion :: Options -> IO Options
@@ -122,9 +122,10 @@ parseOutputFileName :: FilePath -> Options -> IO Options
 parseOutputFileName suppliedFileName opts = 
     return $ opts { outputFileName = return suppliedFileName }
 
+main :: IO ()
 main = do
     args <- getArgs
-    let (optActions, optNonOpts, optMsgs) = getOpt RequireOrder options args
+    let (optActions, _, _) = getOpt RequireOrder options args
     opts <- foldl (>>=) (return defaultOptions) optActions
     date <- defaultDate opts
     inFileName <- inputFileName opts
@@ -132,16 +133,16 @@ main = do
     let cutOff = cutOffDate opts
     conn <- handle ((\e -> do
         putStrLn $ "Failed opening database in \"" ++ inFileName ++ "\""
-        putStrLn $ show e
+        print e
         exitFailure) :: SomeException -> IO a) $ connectSqlite3 inFileName
     rows <- handleSql (\e -> do
         putStrLn $ "Failed to query table \"tblListBirds\" in file \"" ++ inFileName ++ "\""
-        putStrLn $ show e
+        print e
         exitFailure) $ quickQuery' conn "SELECT * FROM tblListBirds" []
     handle ((\e -> do
         putStrLn $ "Failed to write to file \"" ++ outFileName ++ "\""
-        putStrLn $ show e
-        exitFailure) :: SomeException -> IO a) $ writeFile outFileName $ printCSV $ catMaybes $ map (parseRow date cutOff) rows
+        print e
+        exitFailure) :: SomeException -> IO a) $ writeFile outFileName $ printCSV $ mapMaybe (parseRow date cutOff) rows
     disconnect conn
     putStrLn $ "\"" ++ inFileName ++ "\" converted to \"" ++ outFileName ++ "\" successfully"
     exitSuccess
