@@ -2,7 +2,7 @@
 module Main (main) where 
 
 import Control.Exception(SomeException, handle)
-import Database.HDBC (SqlValue, quickQuery', fromSql, disconnect, handleSql)
+import Database.HDBC (SqlValue, quickQuery', fromSql, disconnect)
 import Database.HDBC.Sqlite3 (connectSqlite3)
 import Text.CSV (Record, printCSV)
 import Data.Time (UTCTime, getCurrentTime)
@@ -122,6 +122,9 @@ parseOutputFileName :: FilePath -> Options -> IO Options
 parseOutputFileName suppliedFileName opts = 
     return $ opts { outputFileName = return suppliedFileName }
 
+exitWithException :: String -> SomeException -> IO a
+exitWithException msg e = putStrLn msg >> print e >> exitFailure
+
 main :: IO ()
 main = do
     args <- getArgs
@@ -131,18 +134,9 @@ main = do
     inFileName <- inputFileName opts
     outFileName <- outputFileName opts
     let cutOff = cutOffDate opts
-    conn <- handle ((\e -> do
-        putStrLn $ "Failed opening database in \"" ++ inFileName ++ "\""
-        print e
-        exitFailure) :: SomeException -> IO a) $ connectSqlite3 inFileName
-    rows <- handleSql (\e -> do
-        putStrLn $ "Failed to query table \"tblListBirds\" in file \"" ++ inFileName ++ "\""
-        print e
-        exitFailure) $ quickQuery' conn "SELECT * FROM tblListBirds" []
-    handle ((\e -> do
-        putStrLn $ "Failed to write to file \"" ++ outFileName ++ "\""
-        print e
-        exitFailure) :: SomeException -> IO a) $ writeFile outFileName $ printCSV $ mapMaybe (parseRow date cutOff) rows
+    conn <- handle (exitWithException $ "Failed opening database in \"" ++ inFileName ++ "\"") $ connectSqlite3 inFileName
+    rows <- handle (exitWithException $ "Failed to query table \"tblListBirds\" in file \"" ++ inFileName ++ "\"") $ quickQuery' conn "SELECT * FROM tblListBirds" []
+    handle (exitWithException $ "Failed to write to file \"" ++ outFileName ++ "\"") $ writeFile outFileName $ printCSV $ mapMaybe (parseRow date cutOff) rows
     disconnect conn
     putStrLn $ "\"" ++ inFileName ++ "\" converted to \"" ++ outFileName ++ "\" successfully"
     exitSuccess
