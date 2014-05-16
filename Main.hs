@@ -21,6 +21,7 @@ import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), 
 
 --Exception handling
 import Control.Monad.Trans.Either (EitherT, runEitherT)
+import Control.Monad.Trans.Class (lift)
 import Control.Error.Util (syncIO)
 import Data.EitherR (fmapLT)
 import Data.Maybe(fromMaybe, mapMaybe)
@@ -57,7 +58,6 @@ isRowOk _ (Nothing) _ = True
 isRowOk defDate (Just cutOff) (_:_:_:_:_:_:_:_:mmddyyDate:_) = convertDate defDate (MMDDYYDate mmddyyDate) > cutOff
 isRowOk _ _ _ = False
 
--- FIXME use safeFromSql to catch parse errors
 parseRow:: UTCTime -> Maybe UTCTime -> [SqlValue] -> Maybe Record
 parseRow defaultTime cutOff (_:_:name:_:location:rawDate:comments:lat:long:[]) = 
     let potentialRow = [fromSql name,"","","x", 
@@ -73,6 +73,13 @@ data Options = Options {
         inputFileName :: IO FilePath,
         outputFileName :: IO FilePath,
         cutOffDate :: Maybe UTCTime
+    }
+
+data FinalizedOptions = FinalizedOptions {
+        _defaultDateF :: UTCTime,
+        _inputFileNameF :: FilePath,
+        _outputFileNameF :: FilePath,
+        _cutOffDateF :: Maybe UTCTime
     }
 
 defaultOptions :: Options
@@ -133,24 +140,25 @@ parseOutputFileName :: FilePath -> Options -> IO Options
 parseOutputFileName suppliedFileName opts = 
     return $ opts { outputFileName = return suppliedFileName }
 
-convertAusbirdFile :: FilePath -> FilePath -> UTCTime -> Maybe UTCTime -> EitherT String IO ()
-convertAusbirdFile inFileName outFileName date cutOff = do
-    conn <- errMsg "Failed opening database" $ connectSqlite3 inFileName
-    rows <- errMsg "Failed reading database" $ quickQuery' conn "SELECT * FROM tblListBirds" []
-    errMsg "Failed writing csv" $ writeFile outFileName $ printCSV $ mapMaybe (parseRow date cutOff) rows
-    errMsg "Failed closing database" $ disconnect conn
-        where errMsg = \s -> fmapLT (const s) . syncIO
+convertAusbirdFile :: Options -> EitherT String IO FinalizedOptions
+convertAusbirdFile opts = do
+    date <- onError "Failed getting default date" $ defaultDate opts
+    let cutOff = cutOffDate opts
+    inFileName <- onError "Failed finding input filename" $ inputFileName opts
+    outFileName <- onError "Failed finding output filename" $ outputFileName opts
+    conn <- onError "Failed opening database" $ connectSqlite3 inFileName
+    rows <- onError "Failed reading database" $ quickQuery' conn "SELECT * FROM tblListBirds" []
+    onError "Failed writing csv" $ writeFile outFileName $ printCSV $ mapMaybe (parseRow date cutOff) rows
+    onError "Failed closing database" $ disconnect conn
+    lift $ return $ FinalizedOptions date inFileName outFileName cutOff
+        where onError = \s -> fmapLT (const s) . syncIO
 
 main :: IO ()
 main = do
     args <- getArgs
     let (optActions, _, _) = getOpt RequireOrder options args
     opts <- foldl (>>=) (return defaultOptions) optActions
-    date <- defaultDate opts
-    inFileName <- inputFileName opts
-    outFileName <- outputFileName opts
-    let cutOff = cutOffDate opts
-    e <- runEitherT $ convertAusbirdFile inFileName outFileName date cutOff
+    e <- runEitherT $ convertAusbirdFile opts
     case e of 
         Left errMsg -> putStrLn errMsg >> exitFailure
-        Right _ -> putStrLn ("\"" ++ inFileName ++ "\" converted to \"" ++ outFileName ++ "\" successfully") >> exitSuccess
+        Right (FinalizedOptions _ inF outF _) -> putStrLn ("\"" ++ inF ++ "\" converted to \"" ++ outF ++ "\" successfully") >> exitSuccess
