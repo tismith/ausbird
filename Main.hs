@@ -1,7 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Main (main) where 
 
-import Control.Exception(SomeException, handle)
 import Database.HDBC (SqlValue, quickQuery', fromSql, disconnect)
 import Database.HDBC.Sqlite3 (connectSqlite3)
 import Text.CSV (Record, printCSV)
@@ -13,6 +12,9 @@ import Data.Maybe(fromMaybe, mapMaybe)
 import System.Directory (doesFileExist)
 import System.Environment (getArgs, getProgName)
 import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), ArgDescr(NoArg,ReqArg), usageInfo)
+import Control.Exception (IOException)
+import Control.Monad.Trans.Either (EitherT, runEitherT)
+import Control.Error.Util (tryIO)
 
 {-
  - eBird record format, CSV:
@@ -122,8 +124,12 @@ parseOutputFileName :: FilePath -> Options -> IO Options
 parseOutputFileName suppliedFileName opts = 
     return $ opts { outputFileName = return suppliedFileName }
 
-exitWithException :: String -> SomeException -> IO a
-exitWithException msg e = putStrLn msg >> print e >> exitFailure
+convertAusbirdFile :: FilePath -> FilePath -> UTCTime -> Maybe UTCTime -> EitherT IOException IO ()
+convertAusbirdFile inFileName outFileName date cutOff = do
+    conn <- tryIO $ connectSqlite3 inFileName
+    rows <- tryIO $ quickQuery' conn "SELECT * FROM tblListBirds" []
+    tryIO $ writeFile outFileName $ printCSV $ mapMaybe (parseRow date cutOff) rows
+    tryIO $ disconnect conn
 
 main :: IO ()
 main = do
@@ -134,11 +140,7 @@ main = do
     inFileName <- inputFileName opts
     outFileName <- outputFileName opts
     let cutOff = cutOffDate opts
-    conn <- handle (exitWithException $ "Failed opening database in \"" ++ inFileName ++ "\"") $ connectSqlite3 inFileName
-    rows <- handle (exitWithException $ "Failed to query table \"tblListBirds\" in file \"" ++ inFileName ++ "\"") $ quickQuery' conn "SELECT * FROM tblListBirds" []
-    handle (exitWithException $ "Failed to write to file \"" ++ outFileName ++ "\"") $ writeFile outFileName $ printCSV $ mapMaybe (parseRow date cutOff) rows
-    disconnect conn
-    putStrLn $ "\"" ++ inFileName ++ "\" converted to \"" ++ outFileName ++ "\" successfully"
-    exitSuccess
-
-
+    e <- runEitherT $ convertAusbirdFile inFileName outFileName date cutOff
+    case e of 
+        Left err -> print err >> exitFailure
+        Right _ -> putStrLn ("\"" ++ inFileName ++ "\" converted to \"" ++ outFileName ++ "\" successfully") >> exitSuccess
