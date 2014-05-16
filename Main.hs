@@ -1,20 +1,29 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Main (main) where 
 
+--Sql handling
 import Database.HDBC (SqlValue, quickQuery', fromSql, disconnect)
 import Database.HDBC.Sqlite3 (connectSqlite3)
+
+--Csv handling
 import Text.CSV (Record, printCSV)
+
+--Time handling
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Time.Format(parseTime, formatTime)
-import System.Exit (exitSuccess, exitFailure)
 import System.Locale(defaultTimeLocale)
-import Data.Maybe(fromMaybe, mapMaybe)
+
+--System and file handling
+import System.Exit (exitSuccess, exitFailure)
 import System.Directory (doesFileExist)
 import System.Environment (getArgs, getProgName)
 import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), ArgDescr(NoArg,ReqArg), usageInfo)
-import Control.Exception (IOException)
+
+--Exception handling
 import Control.Monad.Trans.Either (EitherT, runEitherT)
-import Control.Error.Util (tryIO)
+import Control.Error.Util (syncIO)
+import Data.EitherR (fmapLT)
+import Data.Maybe(fromMaybe, mapMaybe)
 
 {-
  - eBird record format, CSV:
@@ -124,12 +133,13 @@ parseOutputFileName :: FilePath -> Options -> IO Options
 parseOutputFileName suppliedFileName opts = 
     return $ opts { outputFileName = return suppliedFileName }
 
-convertAusbirdFile :: FilePath -> FilePath -> UTCTime -> Maybe UTCTime -> EitherT IOException IO ()
+convertAusbirdFile :: FilePath -> FilePath -> UTCTime -> Maybe UTCTime -> EitherT String IO ()
 convertAusbirdFile inFileName outFileName date cutOff = do
-    conn <- tryIO $ connectSqlite3 inFileName
-    rows <- tryIO $ quickQuery' conn "SELECT * FROM tblListBirds" []
-    tryIO $ writeFile outFileName $ printCSV $ mapMaybe (parseRow date cutOff) rows
-    tryIO $ disconnect conn
+    conn <- errMsg "Failed opening database" $ connectSqlite3 inFileName
+    rows <- errMsg "Failed reading database" $ quickQuery' conn "SELECT * FROM tblListBirds" []
+    errMsg "Failed writing csv" $ writeFile outFileName $ printCSV $ mapMaybe (parseRow date cutOff) rows
+    errMsg "Failed closing database" $ disconnect conn
+        where errMsg = \s -> fmapLT (const s) . syncIO
 
 main :: IO ()
 main = do
@@ -142,5 +152,5 @@ main = do
     let cutOff = cutOffDate opts
     e <- runEitherT $ convertAusbirdFile inFileName outFileName date cutOff
     case e of 
-        Left err -> print err >> exitFailure
+        Left errMsg -> putStrLn errMsg >> exitFailure
         Right _ -> putStrLn ("\"" ++ inFileName ++ "\" converted to \"" ++ outFileName ++ "\" successfully") >> exitSuccess
