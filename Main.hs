@@ -20,7 +20,7 @@ import System.Environment (getArgs, getProgName)
 import System.Console.GetOpt (getOpt, ArgOrder(RequireOrder), OptDescr(Option), ArgDescr(NoArg,ReqArg), usageInfo)
 
 --Exception handling
-import Control.Monad.Trans.Either (EitherT, runEitherT)
+import Control.Monad.Trans.Except (ExceptT, runExceptT)
 import Control.Monad.Trans.Class (lift)
 import Control.Error.Util (syncIO)
 import Data.EitherR (fmapLT)
@@ -140,7 +140,7 @@ parseOutputFileName :: FilePath -> Options -> IO Options
 parseOutputFileName suppliedFileName opts = 
     return $ opts { outputFileName = return suppliedFileName }
 
-convertAusbirdFile :: Options -> EitherT String IO FinalizedOptions
+convertAusbirdFile :: Options -> ExceptT String IO FinalizedOptions
 convertAusbirdFile opts = do
     date <- onError "Failed getting default date" $ defaultDate opts
     let cutOff = cutOffDate opts
@@ -158,7 +158,7 @@ main = do
     args <- getArgs
     let (optActions, _, _) = getOpt RequireOrder options args
     opts <- foldl (>>=) (return defaultOptions) optActions
-    e <- runEitherT $ convertAusbirdFile opts
-    case e of 
+    e <- runExceptT $ convertAusbirdFile opts
+    case e of
         Left errMsg -> putStrLn errMsg >> exitFailure
         Right (FinalizedOptions _ inF outF _) -> putStrLn ("\"" ++ inF ++ "\" converted to \"" ++ outF ++ "\" successfully") >> exitSuccess
